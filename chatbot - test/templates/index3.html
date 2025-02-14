@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Medical Research Assistant</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        .chat-container {
+            max-width: 1300px;
+            margin: 20px auto;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            height: 60vh;
+            overflow-y: auto;
+        }
+
+        .message {
+            margin: 15px 0;
+            padding: 12px;
+            border-radius: 15px;
+            display: flex;
+            align-items: start;
+            max-width: 80%;
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        .user-message {
+            background-color: #e9f7ef;
+            margin-left: auto;
+        }
+
+        .bot-response {
+            background-color: #f8f9fa;
+        }
+
+        .icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            margin-right: 15px;
+            flex-shrink: 0;
+        }
+
+        .content {
+            flex-grow: 1;
+            line-height: 1.6;
+        }
+
+        .typing-indicator {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 15px;
+            background: #f1f3f5;
+            border-radius: 20px;
+            margin-left: 55px;
+        }
+
+        .typing-dot {
+            height: 8px;
+            width: 8px;
+            margin: 0 3px;
+            background-color: #6c757d;
+            border-radius: 50%;
+            animation: typing 1.4s infinite ease-in-out;
+        }
+
+        @keyframes typing {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-3px); }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        #fileInput {
+            margin: 10px 0;
+        }
+
+        .loading {
+            display: none;
+            padding: 10px;
+            margin-left: 55px;
+        }
+
+        #uploadStatus .alert {
+            padding: 8px 15px;
+            margin-bottom: 0;
+            border-radius: 20px;
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .input-group-prepend .btn {
+            border-top-right-radius: 0;
+            border-bottom-right-radius: 0;
+            border-right: none;
+        }
+
+        .input-group-append .btn {
+            border-top-left-radius: 0;
+            border-bottom-left-radius: 0;
+        }
+
+        #fileInput + label {
+            cursor: pointer;
+            margin-bottom: 0;
+        }
+
+        #uploadProgress {
+            height: 5px;
+            border-radius: 2px;
+        }
+
+        .progress-bar {
+            transition: width 0.3s ease;
+        }
+
+        #fileInfo {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            min-height: 54px;
+        }
+
+        .badge {
+            font-size: 0.75em;
+            vertical-align: middle;
+        }
+
+        .uploading-spinner {
+            display: inline-block;
+            width: 1rem;
+            height: 1rem;
+            border: 0.2em solid currentColor;
+            border-right-color: transparent;
+            border-radius: 50%;
+            animation: rotate 0.75s linear infinite;
+            margin-left: 8px;
+        }
+
+        @keyframes rotate {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <h1 class="text-center mb-4">Smart Medical Research Assistant</h1>
+        <div class="chat-container" id="chatContainer">
+            <!-- Initial system message -->
+            <div class="message bot-response">
+                <img src="/static/images/chatbot.png" class="icon" alt="AI Assistant">
+                <div class="content">
+                    Welcome! I'm your medical research assistant. You can:
+                    <ul>
+                        <li>Upload PDF/DOCX research papers</li>
+                        <li>Ask questions about medical research</li>
+                        <li>And discover more!</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="typing-indicator">
+                <span class="typing-dot"></span>
+                <span class="typing-dot"></span>
+                <span class="typing-dot"></span>
+            </div>
+        </div>
+
+        <form id="chatForm" enctype="multipart/form-data">
+            <div class="input-group mb-3">
+                <!-- Upload button group -->
+                <div class="input-group-prepend">
+                    <button type="button" class="btn btn-outline-secondary" id="selectFileBtn">
+                        📁 Select File
+                        <input type="file" id="fileInput" name="file" accept=".pdf,.docx,.txt" hidden>
+                    </button>
+                </div>
+                <div class="form-control" id="fileInfo">
+                    <span id="fileName" class="text-muted">No file selected</span>
+                    <div class="progress mt-1 d-none" id="uploadProgress">
+                        <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div class="input-group-append">
+                    <button class="btn btn-success" type="button" id="uploadBtn" disabled>
+                        ↑ Upload
+                    </button>
+                </div>
+            </div>
+
+            <div class="input-group">
+                <!-- Text input -->
+                <textarea class="form-control" id="messageInput" placeholder="Ask a question..." rows="2"></textarea>
+
+                <!-- Submit button -->
+                <div class="input-group-append">
+                    <button class="btn btn-primary" type="submit">Send</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        const chatContainer = document.getElementById('chatContainer');
+        const chatForm = document.getElementById('chatForm');
+        const loading = document.getElementById('loading');
+        const progressBar = document.querySelector('#uploadProgress  .progress-bar');
+        const progressContainer = document.getElementById('uploadProgress');
+
+        // Handle form submission
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const messageInput = document.getElementById('messageInput');
+
+            // Handle message
+            if (messageInput.value.trim()) {
+                appendMessage(messageInput.value, 'user');
+                startStreaming(messageInput.value);
+                messageInput.value = '';
+            }
+        });
+
+        document.getElementById('selectFileBtn').addEventListener('click', function() {
+            document.getElementById('fileInput').click();
+        });
+
+        // File selection handling
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            if (this.files[0]) {
+                document.getElementById('fileName').textContent = this.files[0].name;
+                document.getElementById('uploadBtn').disabled = false;
+            }
+        });
+
+        document.getElementById('uploadBtn').addEventListener('click', async function() {
+            const file = document.getElementById('fileInput').files[0];
+            if (!file) return;
+            const uploadBtn = this;
+            const spinner = uploadBtn.querySelector('.uploading-spinner');
+
+            this.disabled = true;
+            progressContainer.classList.remove('d-none');
+            uploadBtn.innerHTML = 'Uploading... <span class="uploading-spinner"></span>';
+
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/api/upload');
+
+                // Progress handling
+                xhr.upload.addEventListener('progress', function(e) {
+                    if (e.lengthComputable) {
+                        const percent = (e.loaded / e.total) * 100;
+                        progressBar.style.width = `${percent}%`;
+                    }
+                });
+
+                xhr.onload = function() {
+                    if (xhr.status === 200) {
+                        const response = JSON.parse(xhr.responseText);
+                        appendMessage(response.response, 'bot');
+                        // Upload success handling
+                        document.getElementById('fileName').classList.add('text-success');
+                        document.getElementById('fileName').innerHTML = `
+                            ${file.name}
+                            <span class="badge badge-success ml-2">Uploaded successfully</span>
+                        `;
+                        uploadBtn.disabled = false;
+                        progressContainer.classList.add('d-none');
+                        uploadBtn.innerHTML = '↑ Upload';
+                    } else {
+                        handleUploadError('Upload failed');
+                    }
+                };
+
+                xhr.onerror = function() {
+                    handleUploadError('Network error');
+                };
+
+                xhr.send(formData);
+            } catch (error) {
+                handleUploadError(error.message);
+            }
+        });
+
+        function handleUploadError(message) {
+            document.getElementById('uploadProgress').classList.add('d-none');
+            document.getElementById('fileName').classList.add('text-danger');
+            showError(message);
+            document.getElementById('uploadBtn').disabled = false;
+        }
+
+        function appendMessage(text, sender) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender === 'user' ? 'user-message' : 'bot-response'}`;
+
+            const icon = document.createElement('img');
+            icon.className = 'icon';
+            icon.src = sender === 'user'
+                ? '/static/images/user.png'
+                : '/static/images/chatbot.png';
+
+            const content = document.createElement('div');
+            content.className = 'content';
+            content.innerHTML = marked.parse(text);
+
+            messageDiv.appendChild(icon);
+            messageDiv.appendChild(content);
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function startStreaming(message) {
+            loading.style.display = 'block';
+            const eventSource = new EventSource(`/api/stream?message=${encodeURIComponent(message)}`);
+            let buffer = '';
+
+            // Create initial bot message container
+            const botMessage = document.createElement('div');
+            botMessage.className = 'message bot-response';
+            botMessage.innerHTML = `
+                <img src="/static/images/chatbot.png" class="icon" alt="AI">
+                <div class="content"></div>
+            `;
+            chatContainer.appendChild(botMessage);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+
+            const contentDiv = botMessage.querySelector('.content');
+
+            eventSource.onmessage = (event) => {
+                try{
+                    const data = JSON.parse(event.data);
+
+                if (data.type === 'stream') {
+                        // Stream raw text
+                        buffer += data.content;
+                        contentDiv.textContent = buffer; // Use textContent for raw text
+                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                    } else if (data.type === 'final') {
+                        // Replace with formatted content
+                        contentDiv.innerHTML = data.content; // Insert pre-rendered HTML
+                        loading.style.display = 'none';
+                        eventSource.close();
+                    }
+                } catch (error) {
+                    console.error('Error parsing event data:', error);
+                    showError('Error processing response');
+                    eventSource.close();
+                }
+            };
+
+            eventSource.onerror = () => {
+                loading.style.display = 'none';
+                if (!buffer) {
+                    contentDiv.textContent = "Couldn't get response. Please try again.";
+                }
+                eventSource.close();
+            };
+        }
+
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'message bot-response';
+            errorDiv.innerHTML = `
+                <img src="/static/images/chatbot.png" class="icon" alt="AI">
+                <div class="content text-danger">${marked.parse(`**Error:** ${message}`)}</div>
+            `;
+            chatContainer.appendChild(errorDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+    </script>
+</body>
+</html>
