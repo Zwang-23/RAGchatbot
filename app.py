@@ -10,13 +10,16 @@ import create_db
 import uuid
 from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
-from dotenv import load_dotenv
+import time
+import random
+
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)  # Required for session management
 
-load_dotenv('.env')
+
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 
 # Session cleanup scheduler
 scheduler = BackgroundScheduler()
@@ -32,7 +35,7 @@ def cleanup_old_sessions():
     for session_id in os.listdir(sessions_dir):
         session_path = os.path.join(sessions_dir, session_id)
         last_accessed = datetime.fromtimestamp(os.path.getmtime(session_path))
-        if (now - last_accessed) > timedelta(minutes=3):
+        if (now - last_accessed) > timedelta(minutes=5):
             shutil.rmtree(session_path, ignore_errors=True)
 
 
@@ -40,14 +43,23 @@ scheduler.add_job(cleanup_old_sessions, 'interval', minutes=1)
 
 @app.before_request
 def initialize_session():
+    if not os.path.exists("user_sessions"):
+        os.makedirs("user_sessions", mode=0o755)
+    else:
+        os.chmod("user_sessions", 0o755)
+
     if 'session_id' not in session:
-        session['session_id'] = str(uuid.uuid4())
+        timestamp = int(time.time() * 1000)  # Milliseconds precision
+        random_suffix = random.randint(1000, 9999)  # 4-digit random
+        session['session_id'] = f"{timestamp}-{random_suffix}"
+
         session_dir = os.path.join("user_sessions", session['session_id'])
         session_data = os.path.join(session_dir, "uploaded-files")
         session_chroma = os.path.join(session_dir, "chroma")
 
-        os.makedirs(session_data, exist_ok=True)
-        os.makedirs(session_chroma, exist_ok=True)
+        os.makedirs(session_dir, mode=0o755, exist_ok=True)
+        os.makedirs(session_data, mode=0o755, exist_ok=True)
+        os.makedirs(session_chroma, mode=0o755, exist_ok=True)
 
         session['DATA_PATH'] = session_data
         session['CHROMA_PATH'] = session_chroma
@@ -113,15 +125,19 @@ def reset_session():
     old_session_dir = os.path.join("user_sessions", old_session_id)
 
     # 生成新会话
+    timestamp = int(time.time() * 1000)
+    random_suffix = random.randint(1000, 9999)
+    session['session_id'] = f"{timestamp}-{random_suffix}"
+
+    new_session_dir = os.path.join("user_sessions", session['session_id'])
+    session_data = os.path.join(new_session_dir, "uploaded-files")
+    session_chroma = os.path.join(new_session_dir, "chroma")
+
+    os.makedirs(new_session_dir, mode=0o755, exist_ok=True)
+    os.makedirs(session_data, mode=0o755, exist_ok=True)
+    os.makedirs(session_chroma, mode=0o755, exist_ok=True)
+
     session.clear()
-    session['session_id'] = str(uuid.uuid4())
-    session_dir = os.path.join("user_sessions", session['session_id'])
-    session_data = os.path.join(session_dir, "uploaded-files")
-    session_chroma = os.path.join(session_dir, "chroma")
-
-    os.makedirs(session_data, exist_ok=True)
-    os.makedirs(session_chroma, exist_ok=True)
-
     session['DATA_PATH'] = session_data
     session['CHROMA_PATH'] = session_chroma
     session['history'] = []
@@ -129,8 +145,11 @@ def reset_session():
     session['has_documents'] = False
 
     # 删除旧目录
-    if os.path.exists(old_session_dir):
-        shutil.rmtree(old_session_dir, ignore_errors=True)
+    if old_session_id and os.path.exists(old_session_dir):
+        try:
+            shutil.rmtree(old_session_dir, ignore_errors=True)
+        except Exception as e:
+            app.logger.error(f"Failed to delete old session dir: {str(e)}")
 
     return jsonify({'status': 'session reset'})
 
@@ -238,7 +257,7 @@ def transcribe_audio():
         audio_file.save(temp_path)
 
         # Convert to MP3 if needed (requires ffmpeg)
-        # os.system(f"ffmpeg  -i {temp_path} {temp_path}.mp3")
+        os.system(f"ffmpeg  -i {temp_path} {temp_path}.mp3")
 
         with open(temp_path, "rb") as audio:
             transcription = client.audio.transcriptions.create(
